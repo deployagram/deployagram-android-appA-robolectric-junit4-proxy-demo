@@ -10,6 +10,11 @@ import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withHint
 import androidx.test.espresso.matcher.ViewMatchers.withText
+import com.deployagram.junit4.Deployagram
+import com.deployagram.junit4.DeployagramConfig
+import com.deployagram.junit4.DeployagramConfigEntry
+import com.deployagram.junit4.DeployagramEnvironmentRule
+import com.deployagram.junit4.DeployagramRule
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -17,10 +22,15 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.hamcrest.CoreMatchers.containsString
 import org.junit.After
 import org.junit.Before
+import org.junit.BeforeClass
+import org.junit.runner.Description
+import org.junit.runners.model.Statement
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.shadows.ShadowLooper
+import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -28,11 +38,41 @@ import java.util.concurrent.TimeUnit
  * Tests AppA's "Recommend book" screen on the JVM, with Robolectric. No emulator is needed.
  *
  * The test never sends an HTTP request itself. It types an email and presses the button, and AppA makes the
- * request to BookOverflow. BookOverflow is a MockWebServer double, and the test checks what the double received
- * and what the screen shows.
+ * request to BookOverflow. AppA sends it to the Deployagram HTTP Proxy, which forwards it to BookOverflow, a
+ * MockWebServer double. The test checks what the double received and what the screen shows.
  */
 @RunWith(RobolectricTestRunner::class)
+@Deployagram(startEnvironment = true, proxyPort = PROXY_PORT, shareHostPorts = [BOOK_OVERFLOW_PORT, ALICE_MESSAGER_PORT])
+@DeployagramConfig(
+    DeployagramConfigEntry(key = "proxy.namesOfSourceApps.BookOverflow/suggestion", value = "AliceA"),
+    DeployagramConfigEntry(key = "proxy.proxiedAppNames.BookOverflow/suggestion", value = "ORG_ctm_01m1j08sx96792d2tysabvyadp:BookOverflow"),
+    DeployagramConfigEntry(
+        key = "proxy.proxiedApps.BookOverflow/suggestion",
+        value = "http://host.testcontainers.internal:8091/BookOverflow/suggestion",
+    ),
+    DeployagramConfigEntry(key = "proxy.namesOfSourceApps.AliceMessager/config", value = "AliceA"),
+    DeployagramConfigEntry(key = "proxy.proxiedAppNames.AliceMessager/config", value = "AliceMessager"),
+    DeployagramConfigEntry(
+        key = "proxy.proxiedApps.AliceMessager/config",
+        value = "http://host.testcontainers.internal:8092/AliceMessager/config",
+    ),
+)
 class RecommendBookScreenTest {
+
+    companion object {
+        // Robolectric does not run the class rule, so the rule is applied here, to the class's own annotations.
+        @JvmStatic
+        @BeforeClass
+        fun startDeployagramEnvironment() {
+            val description = Description.createSuiteDescription(RecommendBookScreenTest::class.java)
+            DeployagramEnvironmentRule().apply(object : Statement() {
+                override fun evaluate() {}
+            }, description).evaluate()
+        }
+    }
+
+    @get:Rule
+    val deployagram = DeployagramRule()
 
     private val defaultBookOverflowUrl = BookOverflowConfig.baseUrl
     private lateinit var bookOverflow: MockWebServer
@@ -46,8 +86,9 @@ class RecommendBookScreenTest {
         bookOverflowAnswers = SuggestionAnswers()
         enteredEmail = "reader-${UUID.randomUUID()}@example.com"
         bookOverflow.dispatcher = bookOverflowAnswers
-        bookOverflow.start()
-        BookOverflowConfig.baseUrl = bookOverflow.url("/").toString().trimEnd('/')
+        bookOverflow.start(InetAddress.getByName("0.0.0.0"), BOOK_OVERFLOW_PORT)
+        // AppA calls the Proxy, which forwards to the double.
+        BookOverflowConfig.baseUrl = "http://localhost:$PROXY_PORT"
     }
 
     @After

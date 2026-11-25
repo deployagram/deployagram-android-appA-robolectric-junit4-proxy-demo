@@ -42,6 +42,9 @@ dependencies {
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("androidx.test.espresso:espresso-core:3.6.1")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
+    // Deployagram: the JUnit 4 rule and its Proxy annotations, the environment they start. Published on Maven Central.
+    testImplementation("com.deployagram:deployagram-junit4:1.2.0")
+    testImplementation("com.deployagram:deployagram-environment:1.1.0")
 }
 
 // Robolectric runs Android SDK 36 on the JVM, and that needs Java 21. The app itself still compiles for Java 17.

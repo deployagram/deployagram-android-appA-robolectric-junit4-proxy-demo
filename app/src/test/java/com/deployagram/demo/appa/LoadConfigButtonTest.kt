@@ -12,17 +12,26 @@ import androidx.test.espresso.matcher.ViewMatchers.withHint
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
+import com.deployagram.junit4.Deployagram
+import com.deployagram.junit4.DeployagramConfig
+import com.deployagram.junit4.DeployagramConfigEntry
+import com.deployagram.junit4.DeployagramEnvironmentRule
+import com.deployagram.junit4.DeployagramRule
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.hamcrest.CoreMatchers.containsString
 import org.junit.After
 import org.junit.Before
+import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.Description
+import org.junit.runners.model.Statement
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.shadows.ShadowLooper
 import java.util.UUID
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 /**
@@ -32,7 +41,37 @@ import java.util.concurrent.TimeUnit
  * The button sends "Hello" when a book has already been recommended, and an empty payload when it has not.
  */
 @RunWith(RobolectricTestRunner::class)
+@Deployagram(startEnvironment = true, proxyPort = PROXY_PORT, shareHostPorts = [BOOK_OVERFLOW_PORT, ALICE_MESSAGER_PORT])
+@DeployagramConfig(
+    DeployagramConfigEntry(key = "proxy.namesOfSourceApps.BookOverflow/suggestion", value = "AliceA"),
+    DeployagramConfigEntry(key = "proxy.proxiedAppNames.BookOverflow/suggestion", value = "ORG_ctm_01m1j08sx96792d2tysabvyadp:BookOverflow"),
+    DeployagramConfigEntry(
+        key = "proxy.proxiedApps.BookOverflow/suggestion",
+        value = "http://host.testcontainers.internal:8091/BookOverflow/suggestion",
+    ),
+    DeployagramConfigEntry(key = "proxy.namesOfSourceApps.AliceMessager/config", value = "AliceA"),
+    DeployagramConfigEntry(key = "proxy.proxiedAppNames.AliceMessager/config", value = "AliceMessager"),
+    DeployagramConfigEntry(
+        key = "proxy.proxiedApps.AliceMessager/config",
+        value = "http://host.testcontainers.internal:8092/AliceMessager/config",
+    ),
+)
 class LoadConfigButtonTest {
+
+    companion object {
+        // Robolectric does not run the class rule, so the rule is applied here, to the class's own annotations.
+        @JvmStatic
+        @BeforeClass
+        fun startDeployagramEnvironment() {
+            val description = Description.createSuiteDescription(LoadConfigButtonTest::class.java)
+            DeployagramEnvironmentRule().apply(object : Statement() {
+                override fun evaluate() {}
+            }, description).evaluate()
+        }
+    }
+
+    @get:Rule
+    val deployagram = DeployagramRule()
 
     private val defaultBookOverflowUrl = BookOverflowConfig.baseUrl
     private val defaultAliceMessagerUrl = AliceMessagerConfig.baseUrl
@@ -49,13 +88,13 @@ class LoadConfigButtonTest {
         bookOverflowAnswers = SuggestionAnswers()
         bookOverflow = MockWebServer()
         bookOverflow.dispatcher = bookOverflowAnswers
-        bookOverflow.start()
-        BookOverflowConfig.baseUrl = bookOverflow.url("/").toString().trimEnd('/')
+        bookOverflow.start(InetAddress.getByName("0.0.0.0"), BOOK_OVERFLOW_PORT)
+        BookOverflowConfig.baseUrl = "http://localhost:$PROXY_PORT"
 
         aliceMessager = MockWebServer()
         aliceMessager.dispatcher = AliceMessagerAnswers()
-        aliceMessager.start()
-        AliceMessagerConfig.baseUrl = aliceMessager.url("/").toString().trimEnd('/')
+        aliceMessager.start(InetAddress.getByName("0.0.0.0"), ALICE_MESSAGER_PORT)
+        AliceMessagerConfig.baseUrl = "http://localhost:$PROXY_PORT"
     }
 
     @After
